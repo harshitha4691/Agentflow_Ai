@@ -2,10 +2,15 @@ import AppShell from "@/components/AppShell";
 
 export default function Integrations() {
   const platforms = [
-    { name: "Slack", type: "Notification", icon: "💬", desc: "Post execution summaries straight to workspace channels.", status: "Connected" },
-    { name: "GitHub", type: "DevOps", icon: "💻", desc: "Trigger automated commits and tracking loops on pull requests.", status: "Configure" },
-    { name: "Discord Webhooks", type: "Notification", icon: "👾", desc: "Forward stream outputs directly into community logs.", status: "Configure" }
+    { name: "Slack", key: "slack", type: "Notification", icon: "💬", desc: "Post execution summaries straight to workspace channels.", status: "Connected" },
+    { name: "GitHub", key: "github", type: "DevOps", icon: "💻", desc: "Trigger automated commits and tracking loops on pull requests.", status: "Configure" },
+    { name: "Discord Webhooks", key: "discord", type: "Notification", icon: "👾", desc: "Forward stream outputs directly into community logs.", status: "Configure" }
   ];
+
+  // Routes frontend actions to your backend port 8080
+  const handleManageIntegration = (platformKey) => {
+    window.location.href = `http://localhost:8080/api/integrations/oauth/${platformKey}`;
+  };
 
   return (
     <AppShell>
@@ -27,7 +32,11 @@ export default function Integrations() {
                 <p className="text-xs text-gray-400 mt-0.5 font-medium">{p.type}</p>
                 <p className="text-sm text-gray-500 mt-2 leading-relaxed">{p.desc}</p>
               </div>
-              <button className="mt-5 w-full py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-sm font-semibold rounded-lg text-gray-700 transition-colors">
+              
+              <button 
+                onClick={() => handleManageIntegration(p.key)}
+                className="mt-5 w-full py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-sm font-semibold rounded-lg text-gray-700 transition-colors"
+              >
                 Manage Integration
               </button>
             </div>

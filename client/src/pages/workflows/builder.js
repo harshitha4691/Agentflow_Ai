@@ -1,188 +1,110 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import {
-  ReactFlow,
-  MiniMap,
-  Controls,
-  Background,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-} from '@xyflow/react';
+import { useState, useCallback } from 'react';
+import AppShell from "@/components/AppShell";
+import { ReactFlow, Background, Controls, useNodesState, useEdgesState, addEdge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import AppShell from '@/components/AppShell';
-import axios from 'axios';
-import { io } from 'socket.io-client';
-import CustomAgentNode from '@/components/CustomAgentNode'; // Import custom node layout
-
-// Register custom block types outside the main rendering lifecycle loop
-const nodeTypes = {
-  agentNode: CustomAgentNode
-};
-
-const initialNodes = [
-  {
-    id: '1',
-    position: { x: 50, y: 120 },
-    data: { label: '🌐 Webhook Trigger Entry' },
-    style: { background: '#EEF2FF', border: '1px solid #6366F1', borderRadius: '8px', padding: '10px', color: '#312E81', fontWeight: '600' }
-  },
-  {
-    id: '2',
-    type: 'agentNode', // Swap to use our advanced parameter template layout
-    position: { x: 380, y: 60 },
-    data: { label: 'LLM Core Reasoning Agent', model: 'gemini-1.5-pro', prompt: '' }
-  },
-];
-
-const initialEdges = [{ id: 'e1-2', source: '1', target: '2', animated: true }];
-let socket;
 
 export default function WorkflowBuilder() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-  const [workflowName, setWorkflowName] = useState("Custom Agent Engine Workflow");
-  const [saveStatus, setSaveStatus] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
-  const [logs, setLogs] = useState([]);
+  const [prompt, setPrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+  
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  useEffect(() => {
-    // Connect directly to the real-time event pipeline stream
-    socket = io('http://localhost:8080');
+  const onConnect = useCallback((params) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
 
-    socket.on('execution_log', (data) => {
-      setLogs((prevLogs) => [...prevLogs, data]); // Append new execution logs step-by-step
-    });
+  const handleAISubmit = async (e) => {
+    e.preventDefault();
+    if (!prompt.trim()) return;
 
-    return () => socket.disconnect();
-  }, []);
-
-  const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge({ ...params, animated: true }, eds)),
-    [setEdges]
-  );
-
-  const handleRunWorkflow = () => {
-    setLogs([]); // Reset log screen terminal for a clean run execution loop
-    setIsRunning(true);
-    setSaveStatus("Orchestrating...");
-    
-    // ⚡ CRITICAL CHANGE: Pass the active state snapshot configuration array along the line!
-    socket.emit('trigger_agent_execution', { workflowName, nodes });
-    
-    setTimeout(() => {
-      setIsRunning(false);
-      setSaveStatus("Pipeline Processed Successfully.");
-      setTimeout(() => setSaveStatus(""), 3000);
-    }, 13000);
-  };
-
-  const handleSaveWorkflow = async () => {
-    setSaveStatus("Syncing nodes...");
+    setGenerating(true);
     try {
-      await axios.post('http://localhost:8080/api/workflows/save', {
-        name: workflowName,
-        nodes,
-        edges,
+      const res = await fetch('http://localhost:8080/api/workflows/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
       });
-      setSaveStatus("Saved layout successfully!");
-      setTimeout(() => setSaveStatus(""), 3000);
+      const payload = await res.json();
+      
+      if (payload.success && payload.graph) {
+        setNodes(payload.graph.nodes);
+        setEdges(payload.graph.edges);
+      }
     } catch (err) {
-      setSaveStatus("Saved locally (Offline mode).");
-      setTimeout(() => setSaveStatus(""), 3000);
+      console.error("AI Node generation error:", err);
+    } finally {
+      setGenerating(false);
     }
   };
 
-  const addCustomAgentNode = () => {
-    const newNode = {
-      id: String(nodes.length + 1),
-      type: 'agentNode', // Newly generated nodes will also use the custom layout panel
-      position: { x: 200, y: 200 },
-      data: { label: `Action Node #${nodes.length + 1}`, model: 'gemini-1.5-pro', prompt: '' }
-    };
-    setNodes((nds) => nds.concat(newNode));
+  const saveWorkflowToDatabase = async () => {
+    if (nodes.length === 0) return alert("Canvas must contain elements before persistence.");
+
+    try {
+      await fetch('http://localhost:8080/api/workflows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: "Interactive Canvas Workflow",
+          description: `Constructed from prompt: ${prompt}`,
+          status: 'active',
+          nodes,
+          edges
+        })
+      });
+      alert("Workflow saved to database successfully!");
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (
     <AppShell>
-      <div className="flex flex-col h-[calc(100vh-120px)] space-y-4">
-        
-        {/* Upper Control Strip Header */}
-        <div className="flex items-center justify-between bg-white p-4 border border-gray-200 rounded-xl shadow-sm">
-          <div className="flex items-center space-x-4">
-            <input
-              type="text"
-              value={workflowName}
-              onChange={(e) => setWorkflowName(e.target.value)}
-              className="text-xl font-bold text-gray-900 border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:outline-none px-1 py-0.5"
-            />
-            <button
-              onClick={addCustomAgentNode}
-              className="px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm font-semibold rounded-lg transition-colors"
-            >
-              + Add Logic Node
-            </button>
+      <div className="space-y-4 h-[calc(100vh-120px)] flex flex-col">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-black text-gray-900">Automation Builder Canvas</h1>
+            <p className="text-gray-500 text-xs">Type your ideas below to watch your automated graph render visually.</p>
           </div>
-          <div className="flex items-center space-x-3">
-            {saveStatus && <span className="text-sm text-indigo-600 font-semibold">{saveStatus}</span>}
-            
-            <button
-              onClick={handleRunWorkflow}
-              disabled={isRunning}
-              className={`px-4 py-2 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors ${
-                isRunning ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
-              }`}
-            >
-              {isRunning ? 'Running Engine...' : '⚡ Run Pipeline'}
-            </button>
-
-            <button
-              onClick={handleSaveWorkflow}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors"
-            >
-              Save Configuration
-            </button>
-          </div>
+          <button
+            onClick={saveWorkflowToDatabase}
+            className="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-lg hover:bg-blue-700 uppercase tracking-wider"
+          >
+            Save Graph Blueprint
+          </button>
         </div>
 
-        {/* SPLIT-SCREEN WORKSPACE LAYER */}
-        <div className="flex flex-1 gap-4 min-h-0">
-          
-          {/* Left Canvas Panel: Drag and Drop React Flow */}
-          <div className="flex-1 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden relative">
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes} // Register custom model component mapping here
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              fitView
-            >
-              <Controls />
-              <MiniMap nodeStrokeBorderRadius={2} />
-              <Background color="#ccc" gap={16} size={1} />
-            </ReactFlow>
-          </div>
+        {/* Dynamic Prompt Generation Inputs */}
+        <form onSubmit={handleAISubmit} className="flex gap-2 bg-white p-3 border border-gray-200 rounded-xl shadow-xs">
+          <input
+            type="text"
+            className="flex-1 p-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none"
+            placeholder="e.g., Read entries from Google Sheets and post a summary breakdown directly to Discord..."
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <button
+            type="submit"
+            disabled={generating}
+            className="px-4 py-2 bg-gray-900 text-white font-semibold rounded-lg text-xs hover:bg-gray-800 disabled:bg-gray-400"
+          >
+            {generating ? "AI Rendering..." : "Generate Graph"}
+          </button>
+        </form>
 
-          {/* Right Console Panel: Embedded Live Log Feed Widget */}
-          <div className="w-80 bg-gray-950 border border-gray-800 rounded-xl p-4 flex flex-col shadow-xl">
-            <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3 select-none">📟 Execution Log Terminal</h3>
-            <div className="flex-1 overflow-y-auto space-y-3 font-mono text-xs text-green-400 p-2 bg-gray-900 rounded-lg border border-gray-950 shadow-inner">
-              {logs.length === 0 ? (
-                <p className="text-gray-500 italic text-center mt-10">Standby. Click 'Run Pipeline' to stream live logs...</p>
-              ) : (
-                logs.map((log, index) => (
-                  <div key={index} className="border-b border-gray-950 pb-2 last:border-0 leading-relaxed animate-fadeIn">
-                    <span className="text-indigo-400 font-semibold">[{log.timestamp}]</span>{" "}
-                    <span className="text-gray-100">{log.message}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
+        {/* Live Draggable React Flow Node Board Workspace */}
+        <div className="flex-1 w-full bg-gray-50 border border-gray-200 rounded-xl overflow-hidden relative shadow-inner">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            fitView
+          >
+            <Background color="#cbd5e1" gap={16} size={1} />
+            <Controls />
+          </ReactFlow>
         </div>
-
       </div>
     </AppShell>
   );
