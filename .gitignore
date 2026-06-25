@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+/client/node_modules/
+/server/node_modules/
+
+# Environment configurations and private keys
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+server/.env
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# IDE/Editor folders and system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
